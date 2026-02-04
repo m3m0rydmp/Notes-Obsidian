@@ -1,6 +1,6 @@
 {
   "useMarkdownLinks": true,
-  "newLinkFormat": "absolute",
+  "newLinkFormat": "relative",
   "showUnsupportedFiles": false,
   "newFileLocation": "root",
   "newFileFolderPath": "Writeups/assets",

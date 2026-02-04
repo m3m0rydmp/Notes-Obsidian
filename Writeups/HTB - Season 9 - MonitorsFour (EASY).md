@@ -179,3 +179,6 @@ We can also see this in our reverse shell that we established.
 
 We are now accessing the system as **`root`** and can do anything. This means we are inside a `WSL2` environment. The process we just did is to mount the whole system in `/host_root` through this, we can do lateral movement to the whole drive and get the **root flag** directly at `/host_root`
 ![](Writeups/assets/monitorsFour/Pasted%20image%2020260130215022.png)
+
+
+![](assets/monitorsFour/Pasted%20image%2020260130215022.png)
