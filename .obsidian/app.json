@@ -4,5 +4,6 @@
   "showUnsupportedFiles": false,
   "newFileLocation": "root",
   "newFileFolderPath": "Writeups/assets",
-  "attachmentFolderPath": "Writeups/assets"
+  "attachmentFolderPath": "assets",
+  "alwaysUpdateLinks": true
 }
