@@ -47,11 +47,14 @@ We see that port 80 is open. If you try to visit that, the browser will return a
 ```
 ## Web Enumeration
 Upon accessing the landing page, there's a login page at the top right
-![[Pasted image 20260130210055.png]]
+![Monitors Four](Writeups/assets/monitorsFour/Pasted%20image%2020260130210055.png)
+
 There is no registration form, so we try to go to **forgot password**, upon sending an invalid email, the webpage says that it will send an email if the account is registered on the system.
-![[Pasted image 20260130210215.png]]
+![](Writeups/assets/monitorsFour/Pasted%20image%2020260130210215.png)
+
 We try to fuzz for directories and we found something interesting
-![[Pasted image 20260130210351.png]]
+![](Writeups/assets/monitorsFour/Pasted%20image%2020260130210351.png)
+
 Upon fuzzing, we will also see `.env` which consists of the following content. This is a rabbit hole as I did not get to use these.
 ```
 DB_HOST=mariadb
@@ -69,19 +72,18 @@ We will have a result of cacti, so it will be `cacti.monitorsfour.htb` we will a
 <Machine IP>    monitorsfour.htb cacti.monitorsfour.htb
 ```
 We still have no creds in order to authenticate but the version of the cacti is interesting.
-![[Pasted image 20260130210833.png]]
+![](Writeups/assets/monitorsFour/Pasted%20image%2020260130210833.png)
 Let's go back to the user endpoint the we found earlier.
 
 ## Type Juggling
 As I intercept the requests in `BurpSuite` I found an interesting thing in the response.
-![[Pasted image 20260130211105.png]]
-
+![](Writeups/assets/monitorsFour/Pasted%20image%2020260130211105.png)
 | PHP8 won't try to cast string into numbers anymore, thanks to the Saner string to number comparisons RFC, meaning that collision with hashes starting with 0e and the likes are finally a thing of the past! The Consistent type errors for internal functions RFC will prevent things like `0 == strcmp($_GET['username'], $password)` bypasses, since strcmp won't return null and spit a warning any longer, but will throw a proper exception instead.
-![[Pasted image 20260130211207.png]]
+![](Writeups/assets/monitorsFour/Pasted%20image%2020260130211207.png)
 https://github.com/swisskyrepo/PayloadsAllTheThings/tree/master/Type%20Juggling#loose-comparison
 
 In the user endpoint, try to put a random character in the token parameter. Notice that it says **`Invalid or Missing Token`** compared to the response earlier.
-![[Pasted image 20260130211439.png]]
+![](Writeups/assets/monitorsFour/Pasted%20image%2020260130211439.png)
 So we try to fuzz for a character that is compatible for the **php_loss_comparison**. Use this payload to try and fuzz which are the correct characters.
 ```
 0
@@ -100,43 +102,36 @@ false
 {}
 ```
 
-![[Pasted image 20260130211703.png]]
-
+![](Writeups/assets/monitorsFour/Pasted%20image%2020260130211703.png)
 There are 3 characters that are valid to trick PHP. We then go back to the user endpoint then append 1 `php_loose_comparison` character in token parameter.
-![[Pasted image 20260130211851.png]]
+![](Writeups/assets/monitorsFour/Pasted%20image%2020260130211851.png)
 It reveals credentials especially the admin. After some observation, we notice that the password hashes are MD5. We try to crack it with hashcat. The plain text equivalent of the hash password for the user admin is:
 `admin:wonderful1`
 The name of the admin is `Marcus` we'll remember this. For now, we use this password to login on the webpage.
-![[Pasted image 20260130212041.png]]
-
+![](Writeups/assets/monitorsFour/Pasted%20image%2020260130212041.png)
 Unfortunately, we did not find anything here, so we go back to the **cacti** subdomain. If we login with `admin:wonderful1` it is incorrect. But if we try `marcus:wonderful1` we get an access.
 
 # User
 ## CVE-2025-24367
 As we noticed about the version of **Cacti** earlier. It is vulnerable to an RCE of [CVE-2025-24367](https://github.com/TheCyberGeek/CVE-2025-24367-Cacti-PoC).
 You can do more research about this CVE, but we'll skip to RCE now. The given link has a POC exploit already so we try to establish a foothold on the machine. **Make sure that you have a netcat listener already open**
-![[Pasted image 20260130212544.png]]
+![](Writeups/assets/monitorsFour/Pasted%20image%2020260130212544.png)
 Once a shell is established, you can get the user flag already.
-![[Pasted image 20260130212647.png]]
-
+![](Writeups/assets/monitorsFour/Pasted%20image%2020260130212647.png)
 # Root
 If you're wondering why is this **Linux**, when this machine is **Windows**? We figure out that the current environment is running in docker. We enumerate this by looking inside `/etc/resolv.conf`
 To understand the topology, we check the hostname resolution.
-![[Pasted image 20260130213337.png]]
-
+![](Writeups/assets/monitorsFour/Pasted%20image%2020260130213337.png)
 So, `mariadb` is not a global hostname, but a **Docker-Internal Service**. The resolved ip `172.18.0.3` sits on a Docker Bridge Network, which is `172.18.0.2`.
-![[Pasted image 20260130213557.png]]
+![](Writeups/assets/monitorsFour/Pasted%20image%2020260130213557.png)
 ```
 Container (Cacti) ---> 172.18.0.2
 Docker (MariaDB) ---> 172.18.0.3
 Bridge Gateway ---> 172.18.0.1
 ```
-
 ## Internal Scanning
 We use the tool [fscan](https://github.com/shadow1ng/fscan/releases) to scan for open ports internall. We want to scan the Docker environment, this tool will also find for vulnerabilities if there are any.
-
-![[Pasted image 20260130213858.png]]
-
+![](Writeups/assets/monitorsFour/Pasted%20image%2020260130213858.png)
 We notice that the docker environment is vulnerable to an API unauthorized RCE. More info about the vulnerability here [When a SSRF is enough: Full Docker Escape on Windows Docker Desktop (CVE-2025-9074)](https://blog.qwertysecurity.com/Articles/blog3)
 
 Basically, we will try to mount the whole WSL to `host_root`. 
@@ -179,6 +174,8 @@ Then confirm if the reverse shell is working
 curl -s "http://192.168.65.7:2375/containers/1e4ee238bde1d95f84869b93fa56135253c1400592c5f7dc81a9464d38a2297c/logs?stdout=1&stderr=1"
 ```
 We can also see this in our reverse shell that we established.
-![[Pasted image 20260130214829.png]]
+
+![](Writeups/assets/monitorsFour/Pasted%20image%2020260130214829.png)
+
 We are now accessing the system as **`root`** and can do anything. This means we are inside a `WSL2` environment. The process we just did is to mount the whole system in `/host_root` through this, we can do lateral movement to the whole drive and get the **root flag** directly at `/host_root`
-![[Pasted image 20260130215022.png]]
+![](Writeups/assets/monitorsFour/Pasted%20image%2020260130215022.png)

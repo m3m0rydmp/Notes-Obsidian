@@ -11,17 +11,30 @@
             "id": "d6c9a78ce9385654",
             "type": "leaf",
             "state": {
+              "type": "image",
+              "state": {
+                "file": "Writeups/assets/monitorsFour/Pasted image 20260130210055.png"
+              },
+              "icon": "lucide-image",
+              "title": "Pasted image 20260130210055"
+            }
+          },
+          {
+            "id": "fe2e3bfd1daae714",
+            "type": "leaf",
+            "state": {
               "type": "markdown",
               "state": {
-                "file": "METHODS/Web Application Reconnaissance.md",
+                "file": "Writeups/HTB - Season 9 - MonitorsFour (EASY).md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Web Application Reconnaissance"
+              "title": "HTB - Season 9 - MonitorsFour (EASY)"
             }
           }
-        ]
+        ],
+        "currentTab": 1
       }
     ],
     "direction": "vertical"
@@ -154,13 +167,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "METHODS/Web Application Reconnaissance.md",
+                "file": "Writeups/HTB - Season 9 - MonitorsFour (EASY).md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of Web Application Reconnaissance"
+              "title": "Outline of HTB - Season 9 - MonitorsFour (EASY)"
             }
           },
           {
@@ -192,8 +205,18 @@
       "bases:Create new base": false
     }
   },
-  "active": "d6c9a78ce9385654",
+  "active": "fe2e3bfd1daae714",
   "lastOpenFiles": [
+    "Writeups/assets/monitorsFour/Pasted image 20260130210833.png",
+    "Writeups/HTB - Season 9 - MonitorsFour (EASY).md",
+    "Writeups/assets/monitorsFour/Pasted image 20260130210351.png",
+    "Writeups/assets/monitorsFour/Pasted image 20260130210215.png",
+    "Writeups/assets/monitorsFour/Pasted image 20260130210055.png",
+    "Writeups/WebApp VM Machine.md",
+    "assets/monitorsFour/Pasted.md",
+    "assets/monitorsFour",
+    "assets",
+    "METHODS/Web Application Reconnaissance.md",
     "Hacking and Secure Web Applications/Hacking and Securing Web Applications.md",
     "Writeups/assets/monitorsFour/Pasted image 20260130215022.png",
     "Writeups/assets/monitorsFour/Pasted image 20260130214829.png",
@@ -201,16 +224,9 @@
     "Writeups/assets/monitorsFour/Pasted image 20260130213858.png",
     "Writeups/assets/monitorsFour/Pasted image 20260130213557.png",
     "Writeups/assets/monitorsFour/Pasted image 20260130213337.png",
-    "Writeups/assets/monitorsFour/Pasted image 20260130212647.png",
-    "Writeups/assets/monitorsFour/Pasted image 20260130212544.png",
-    "Writeups/assets/monitorsFour/Pasted image 20260130211207.png",
-    "Writeups/assets/monitorsFour/Pasted image 20260130211851.png",
     "Writeups/assets/monitorsFour",
-    "Writeups/WebApp VM Machine.md",
-    "Writeups/HTB - Season 9 - MonitorsFour (EASY).md",
     "Writeups/assets",
     "Writeups",
-    "METHODS/Web Application Reconnaissance.md",
     "METHODS",
     "Hacking and Secure Web Applications",
     "Welcome.md"
