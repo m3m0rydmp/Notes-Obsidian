@@ -1,6 +1,0 @@
-# Ignore asset folders to make it less chaotic
-/assets
-
-# Ignore hidden assets
-.obsidian
-.git
