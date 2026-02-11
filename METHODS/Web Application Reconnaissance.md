@@ -178,5 +178,402 @@ You can also supply ffuf with multiple wordlists, the catch is to configure a cu
 
 More information can be found [here](https://github.com/ffuf/ffuf/wiki)
 
+#### Fuzzing Virtual Host
 Ffuf can also be used to enumerate virtual host to uncover hidden subdomains. An `-H` flag is needed to refer to the host header then place the word `FUZZ` at the beginning of the domain to indicate the fuzzing position.
 `ffuf -w wordlists.txt -u 'http://10.10.10.1' -H "Host: FUZZ.inlanefreight.htb"`
+
+#### Brute Forcing Passwords using Ffuf
+A pre-requisite to brute force a password (or any parameter) using ffuf, is a `POST` request. You can intercept a `POST` request before sending this to a browser using **BurpSuite** or any intercepting tool you prefer.
+The `POST` request should have a parameter present such as: `username=user&pass=password` then save it to a file. You can now then begin using ffuf and issue the following command:
+```
+ffuf -request post_request.txt -w wordlists.txt
+```
+- `-request` - This flag passes your post request file. It is not necessary to pass a `-u` flag since the request file contains all the details needed such as: URL, Headers, and Parameters.
+Once the command is executed, you will then need to observe the output. Most **incorrect** passwords will have a similar output such as: Status, Size, Words, Lines, and Duration. The **correct** password will be the one who has a different output.
+
+## Hidden Dev Files
+A most notorious example for a hidden file is `.git`. But there are many other hidden file that could be present in a web application. Such that `.git` is known to reveal source code, passwords, and internal infrastructure details, but there are other sources that can reveal this. You can use fuzzer tools to reveal hidden files, one common tool is [FFUF Basics](#FFUF%20Basics)
+
+When you find a `.git` folder on a web server, you've struck gold. Here's why:
+* .git/HEAD - Points to the current branch (e.g., "ref: refs/heads/master/main")
+* .git/config - Contains repository config including remote URLs and credentials
+* .git/index - Database of all files in the repository
+* .git/refs - Contains commit hashes for branches and tags
+
+**Why It's Dangerous**: If a `.git` folder is exposed, attackers can reconstruct the entire source code by:
+1. Downloading the `.git` folder
+2. Using the index file to identify all objects
+3. Downloading each object from `.git/objects/`
+4. Rebuilding files from these objects Tools like `git-dumper` automate this process entirely
+
+#### Other Common Exposed Files Examples and Their Purpose
+1. Container Files
+	* docker-compose.yml: Multi-container setup with passwords and volumes
+	* Dockerfile: Shows the app is built and what's installed
+	* kubernetes.yaml: Contains services accounts and secrets
+2. Config Files
+	* .env: Environment variables with database passwords
+	* wp-config.php: WordPress database credentials
+	* config.php: Application secrets and API keys
+3. Build Files
+	* package.json: Shows dependencies and scripts
+	* .npmrc: Can contain private registry tokens
+	* Jenkinsfile: Shows deployment process
+4. IDE Files
+	* .vscide/: Contains debugging configurations
+	* .idea/: Can expose local file paths
+	* .swp: Vim temporary files with unsaved changes
+Each of these files can expose sensitive details about your application's infrastructure, credentials, or internal workings.
+
+## API Discovery
+API documentation can inadvertently expose sensitive implementation details and security vulnerabilties. This module explores how API documentation can be leveraged for security research and penetration testing, helping both offensive researchers find vulnerabilities and defenders better protect their systems.
+
+#### Common API Documentation Formats
+
+**SWAGGER/OpenAPI**
+The most widely used format for REST API documentation. These files contain detailed information about endpoints, parameters, authentication methods, and response structures. Common file formats include:
+* swagger.json
+* openapi.json
+* openapi.yaml
+
+#### Common Discovery Paths
+Security researchers typically check these paths for exposed API documentation:
+```
+Copy/swagger/index.html
+/swagger-ui/
+/swagger-ui.html
+/api-docs/
+/docs/
+/api/swagger
+/api/swagger-ui
+/swagger.json
+/api-docs.json
+/openapi.json
+/openapi.yaml
+/redoc/
+/redoc.html
+```
+
+Many organizations use different base paths or versioning in their URLs. Try variations like:
+```
+Copy/v1/swagger
+/v2/docs
+/api/v1/swagger
+/api/v2/docs
+```
+
+### Security Implications and Attack Vectors
+#### 1. Development to Production Mapping
+
+Development or staging environments often expose complete API documentation that can be mapped directly to production endpoints. This allows researchers to:
+* Understand the full API structure
+* Discover endpoint patterns
+* Identify potential vulnerability points
+* Test functionality that might be hidden in production
+
+**EXAMPLE SCENARIO**
+```
+yamlCopy# Development API docs showing:
+/api/v1/users/{id}/reset-password:
+  post:
+    description: "Reset user password"
+    parameters:
+      - name: id
+        in: path
+        required: true
+        type: integer
+      - name: token
+        in: body
+        required: true
+        type: string
+    responses:
+      200:
+        description: "Password reset successful"
+      400:
+        description: "Invalid token"
+```
+
+##### Attack Vector
+1. Document all endpoints from development documentation
+2. Map patterns to production (e.g., if dev uses `/api/v1`, prod might use the same)
+3. Test each endpoint in production for:
+	* Authentication bypass
+	* Parameter manipulation
+	* Response differences
+	* Error handling variations
+#### 2. Hidden and Unreleased Endpoint Discovery
+API documentation often reveals:
+* Beta endpoints not meant for public use
+* Internal administrative interfaces
+* Deprecated but functional endpoints
+* Upcoming features still in testing
+
+**EXAMPLE DISCOVERY**
+```
+yamlCopy# Found in dev docs:
+/api/v1/admin/users:
+  get:
+    description: "[BETA] New admin interface"
+/api/v1/export/legacy:
+  get:
+    description: "Deprecated but maintained for backward compatibility"
+    parameters:
+      - name: format
+        in: query
+        type: string
+        enum: [csv, xml]
+```
+
+#### 3. Parameter and Response Analysis
+Documentation Reveals:
+* Input validation patterns
+* Expected data types
+* Optional vs required parameters
+* Response structure and data models
+* Error messages and codes
+
+**EXAMPLE SECURITY ISSUES**
+```
+yamlCopy/api/v1/data/query:
+  get:
+    parameters:
+      - name: filter
+        in: query
+        type: string
+        description: "Filter for data query"
+        example: "status='active'"
+    responses:
+      200:
+        description: "Query results"
+        schema:
+          type: array
+          items:
+            $ref: '#/definitions/UserData'
+```
+Reveals:
+* Potential SQL injection vectors through the filter parameter
+* Data structure of user information
+* Query capabilities that might be abusable
+
+#### 4 Authentication Bypass Opportunities
+Common Scenarios:
+1. Documentation states authentication required but endpoints lacks enforcement
+2. Inconsistent auth checks between environments
+3. Multiple auth methods with fallback mechanisms
+
+**EXAMPLE**
+```
+yamlCopy/api/v1/user/profile:
+  get:
+    security:
+      - bearerAuth: []
+    description: "Returns user profile data"
+    responses:
+      200:
+        description: "User profile"
+        schema:
+          $ref: '#/definitions/UserProfile'
+```
+Research Vectors:
+1. Try accessing without authentication
+2. Test with expired tokens
+3. Check for auth bypass in subdirectories
+4. Test different HTTP methods
+
+#### 5. Business Logic Analysis
+API documentation often reveals:
+* Workflow seqences
+* State transitions
+* Validation rules
+* Error handling
+This information can be used to:
+* Find race conditions
+* Test edge cases
+* Bypass workflow restrictions
+* Manipulate state restrictions
+
+#### Real-World Example Analysis
+A typical API documentation leak:
+```
+yamlCopyopenapi: 3.0.0
+info:
+  title: Company Internal API
+  version: 1.0.0
+paths:
+  /api/v1/users/import:
+    post:
+      description: "Batch import users from CSV"
+      parameters:
+        - name: file
+          in: formData
+          type: file
+      security:
+        - apiKey: []
+  /api/v1/users/{id}/permissions:
+    put:
+      description: "Update user permissions"
+      parameters:
+        - name: id
+          in: path
+          required: true
+        - name: roles
+          in: body
+          schema:
+            type: array
+```
+
+Security implications:
+1. Batch import functionality could be vulnerable to:
+	* CSV injection
+	* Directory traversal
+	* File type validation bypass
+2. Permission update endpoint might have:
+	* IDOR vulnerabilities
+	* Privilege escalation opportunities
+3. API key authentication might be:
+	* Bypassable
+	* Reusable across environments
+	* Weakly validated
+
+## Internal Tooling and CICD
+Development and administrative tools are often the hidden gems of security research. These tools, designed for internal use, can provide extensive access and functionality that might be leveraged during security assessments. This guide explores methodologies for discovering and testing these valuable targets.
+
+**WHY INTERNAL TOOLS MATTER?**
+Internal tools like Jenkins, phpMyAdmin, and Jira are prime targets because:
+* They often have extensive privileges within their systems
+* Provide access to sensitive data and functionality
+* Are frequently misconfigured or running outdated versions
+* Can serve as pivot points to other internal systems
+* May contain valuable internal documentation
+
+#### Discovery Phase
+The first step is identifying these tools within the target scope. Here are key places to look:
+Common paths and subdomains:
+* /admin
+* /jenkins
+* /jira
+* /phpmyadmin
+* dev.
+* admin.
+* tools.
+* internal.
+
+Development tools often hide in plain sight. Look for:
+* CI/CD pipelines
+* Code respositories
+* Monitoring systems
+* Database administration tools
+* Issue tracking systems
+* Documentation platforms
+
+#### Initial Assessment
+Once you've found a tool, start with passive reconnaissance:
+1. Version Identification | Check page source | Look at HTTP headers | Review error messages | Search for documentation files | Examine changelog references
+2. Known Vulnerabilities Start by researching the version you've identified:
+	* Search for CVEs and security advisories
+	* Focus first on unauthenticated vulnerabilities
+	* Look for public exploits
+	* Review security blogs and write-ups
+#### Common Misconfigurations
+These tools often suffer from misconfigurations that can be leveraged. Here's what to check:
+* Default Installations
+	* Unmodified setup files
+	* Default credentials
+	* Sample configurations
+	* Test accounts
+* Access Controls
+	* Missing authentication
+	* Weak permissions
+	* Incomplete security headers
+	* Open redirect vulnerabilities
+Research is your friend - look through:
+* HackerOne reports
+* Bug bounty write-ups
+* GitHub security advirosires
+* Conference presentations
+
+#### Authentication Testing
+
+When testing authentication mechanisms:
+* Default Credentials
+* Common Issues:
+	* Weak password policies
+	* Missing brute force protection
+	* Bypassing authentication
+	* Broken password reset flows
+
+#### Post-Authentication Analysis
+Once authenticated, broaden your testing:
+* Functionality Assessment
+	* Map all available features
+	* Test RBAC implementation
+	* Look for privilege escalation
+	* Check for dangerous functions
+* Plugin and extension testing
+	* Review default plugins
+	* Check plugin versions
+	* Test plugin configurations
+	* Look for unsafe settings
+
+#### Developer Features
+Development tools often include diagnostics features that can be leveraged:
+* Look for:
+	* Debug endpoints
+	* Testing interfaces
+	* Health checks
+	* Monitoring tools
+	* Log viewers
+These features might allow:
+* Remote code execution
+* Information disclosure
+* Access to sensitive data
+* System manipulation
+
+#### Documentation and Credential Hunting
+Search thoroughly for exposed information:
+* Common Files:
+	* README files
+	* Configuration backups
+	* Log files
+	* Setup guides
+	* API documentation
+* Look for:
+	* Hardcoded credentials
+	* API keys
+	* Internal hostnames
+	* Network details
+	* Database strings
+
+#### Tool Specific Approaches
+##### Jenkins
+Critical areas to test:
+* Script console access
+* Build logs
+* Plugin vulnerabilities
+* Project configurations
+* Build triggers
+##### Jira
+Focus on:
+* Attachment handling
+* User enumeration
+* Project permissions
+* Information disclosures
+##### phpMyAdmin
+Key test points:
+* SQL injection
+* Access to credentials
+* File inclusion (if enabled)
+* Export functionality
+* User privileges
+* Configuration storage
+
+#### Best Practices
+When conducting your assessment
+1. Documentation | Keep detailed notes | Save evidences carefully | Document your methodology | Track affected versions
+2. Testing Approach
+	* Start passive
+	* Increase intensity gradually 
+	* Monitor for impacts
+	* Document findings clearly
+
+REMEMBER: The goal is to find security issues while avoiding system disruption. Always follow scope guidelines and report findings responsibly.
